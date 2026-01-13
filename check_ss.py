@@ -10,7 +10,7 @@ MAX_PRICE = 300000
 STATE_FILE = "seen.json"
 
 URLS = {
-    "Mārupes pag.": "https://www.ss.lv/lv/real-estate/homes-summer-residences/riga-region/marupe-parish/sell/",
+    "Mārupes pag.": "https://www.ss.lv/lv/real-estate/homes-summer-residences/riga-region/marupes-pag/sell/",
     "Āgenskalns": "https://www.ss.lv/lv/real-estate/homes-summer-residences/riga/agenskalns/sell/",
     "Bieriņi": "https://www.ss.lv/lv/real-estate/homes-summer-residences/riga/bierini/sell/",
 }
@@ -101,6 +101,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
