@@ -42,11 +42,11 @@ def parse_price(text):
 
 def check_location(location, url, seen):
     headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-    "Accept-Language": "lv-LV,lv;q=0.9,en-US;q=0.8,en;q=0.7",
-}
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "Accept-Language": "lv-LV,lv;q=0.9,en-US;q=0.8,en;q=0.7",
+    }
 
-r = requests.get(url, headers=headers, timeout=20)
+    r = requests.get(url, headers=headers, timeout=20)
     soup = BeautifulSoup(r.text, "html.parser")
 
     rows = soup.select("tr[id^='tr_']")
@@ -89,4 +89,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
