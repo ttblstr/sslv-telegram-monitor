@@ -49,20 +49,32 @@ def check_location(location, url, seen):
     r = requests.get(url, headers=headers, timeout=20)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    rows = soup.select("tr[id^='tr_']")
+    rows = soup.find_all("tr")
+
     for row in rows:
-        a = row.select_one("a")
+        a = row.find("a", href=True)
+        if not a:
+            continue
+
+        href = a["href"]
+        if "/msg/" not in href:
+            continue
+
         tds = row.find_all("td")
-
-        if not a or len(tds) < 5:
+        if not tds:
             continue
 
-        link = "https://www.ss.lv" + a["href"]
-        if link in seen:
-            continue
+        price = None
+        for td in tds:
+            if "€" in td.text:
+                price = parse_price(td.text)
+                break
 
-        price = parse_price(tds[-1].text)
         if not price or price > MAX_PRICE:
+            continue
+
+        link = "https://www.ss.lv" + href
+        if link in seen:
             continue
 
         title = a.text.strip()
@@ -89,5 +101,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
