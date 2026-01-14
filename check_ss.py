@@ -83,10 +83,12 @@ def check_location(location, url, seen):
 
     soup = BeautifulSoup(r.text, "html.parser")
 
-    print(f"DEBUG {location}: Total <tr> tags found: {len(soup.find_all('tr'))}")
-    print(f"DEBUG {location}: tr with id starting tr_: {len(soup.select('tr[id^="tr_"]'))}")
-    print(f"DEBUG {location}: div.am found: {len(soup.select('div.am'))}")
-    print(f"DEBUG {location}: div containing /msg/ links: {len(soup.select('div a[href*="/msg/"]'))}")
+    print(f"DEBUG {location}: Total <tr> tags: {len(soup.find_all('tr'))}")
+    print(f"DEBUG {location}: tr[id^='tr_']: {len(soup.select(\"tr[id^='tr_']\"))}")
+    print(f"DEBUG {location}: div.am: {len(soup.select('div.am'))}")
+    print(f"DEBUG {location}: div.msg: {len(soup.select('div.msg'))}")
+    print(f"DEBUG {location}: Elements with a[href*='/msg/']: {len(soup.select(\"a[href*='/msg/']\"))}")
+    print(f"DEBUG {location}: Parent containers of /msg/ links (approx): {len(soup.select(\"div:has(a[href*='/msg/'])\")) or 'N/A (needs lxml parser)'}")
     
     # Main listing rows on m.ss.lv — table rows with id="tr_*"
     rows = soup.select('tr[id^="tr_"]')
@@ -106,5 +108,6 @@ def check_location(location, url, seen):
         a = row.find("a", href=True)
         if not a or "/msg/" not in a["href"]:
             continue
+
 
 
