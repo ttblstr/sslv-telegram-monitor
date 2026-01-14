@@ -83,7 +83,7 @@ def check_location(location, url, seen):
 
     soup = BeautifulSoup(r.text, "html.parser")
 
-print(f"DEBUG {location}: Total <tr> tags found: {len(soup.find_all('tr'))}")
+    print(f"DEBUG {location}: Total <tr> tags found: {len(soup.find_all('tr'))}")
     print(f"DEBUG {location}: tr with id starting tr_: {len(soup.select('tr[id^="tr_"]'))}")
     print(f"DEBUG {location}: div.am found: {len(soup.select('div.am'))}")
     print(f"DEBUG {location}: div containing /msg/ links: {len(soup.select('div a[href*="/msg/"]'))}")
@@ -106,4 +106,5 @@ print(f"DEBUG {location}: Total <tr> tags found: {len(soup.find_all('tr'))}")
         a = row.find("a", href=True)
         if not a or "/msg/" not in a["href"]:
             continue
+
 
