@@ -95,4 +95,9 @@ def check_location(location, url, seen):
 
     for row in rows:
         # Skip header / separator rows
-        if 'msga_head' in row.get('class', []) or not row.get('id',
+        if 'msga_head' in row.get('class', []) or not row.get('id', '').startswith('tr_'):
+            continue
+
+        a = row.find("a", href=True)
+        if not a or "/msg/" not in a["href"]:
+            continue
