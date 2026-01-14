@@ -1,6 +1,7 @@
 import requests
 import os
 import json
+import re
 from bs4 import BeautifulSoup
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
@@ -25,7 +26,7 @@ def load_seen():
 
 def save_seen(seen):
     with open(STATE_FILE, "w") as f:
-        json.dump(list(seen), f)
+        json.dump(sorted(list(seen)), f)
 
 
 def send_message(text):
@@ -33,33 +34,27 @@ def send_message(text):
     requests.post(url, json={"chat_id": CHAT_ID, "text": text}, timeout=10)
 
 
-def parse_price(text):
-    text = text.replace("€", "").replace("EUR", "").replace(" ", "").strip()
-    if not text.isdigit():
+def extract_price(text):
+    digits = re.sub(r"[^\d]", "", text)
+    if not digits:
         return None
-    return int(text)
+    return int(digits)
 
 
 def check_location(location, url, seen):
     headers = {
-        "User-Agent": "Mozilla/5.0",
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10)",
         "Accept-Language": "lv-LV,lv;q=0.9",
     }
 
     r = requests.get(url, headers=headers, timeout=20)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    for row in soup.find_all("tr"):
-        cols = row.find_all("td")
-        if len(cols) < 5:
-            continue
+    items = soup.select("div.list_item")
 
-        a = cols[1].find("a", href=True)
+    for item in items:
+        a = item.find("a", href=True)
         if not a or "/msg/" not in a["href"]:
-            continue
-
-        price = parse_price(cols[-1].get_text())
-        if price is None or price > MAX_PRICE:
             continue
 
         link = "https://www.ss.lv" + a["href"]
@@ -67,6 +62,14 @@ def check_location(location, url, seen):
             continue
 
         title = a.get_text(strip=True)
+
+        price_div = item.find("div", class_="price")
+        if not price_div:
+            continue
+
+        price = extract_price(price_div.get_text())
+        if not price or price > MAX_PRICE:
+            continue
 
         message = (
             f"🏠 {title}\n"
@@ -90,9 +93,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
