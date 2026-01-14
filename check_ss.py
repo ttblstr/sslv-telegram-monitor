@@ -3,6 +3,7 @@ import os
 import json
 import re
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 CHAT_ID = os.environ["CHAT_ID"]
@@ -19,77 +20,79 @@ URLS = {
 
 def load_seen():
     if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, "r") as f:
-            return set(json.load(f))
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                return set(json.load(f))
+        except Exception as e:
+            print(f"Error loading seen.json: {e}")
     return set()
 
 
 def save_seen(seen):
-    with open(STATE_FILE, "w") as f:
-        json.dump(sorted(list(seen)), f)
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(sorted(list(seen)), f, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error saving seen.json: {e}")
 
 
 def send_message(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": CHAT_ID, "text": text}, timeout=10)
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": text,
+        "disable_web_page_preview": True,
+        "parse_mode": "HTML"  # optional: makes links prettier
+    }
+    try:
+        resp = requests.post(url, json=payload, timeout=15)
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"Telegram send failed: {e}")
 
 
 def extract_price(text):
-    digits = re.sub(r"[^\d]", "", text)
-    if not digits:
+    if not text:
         return None
-    return int(digits)
+    # Remove everything except digits and keep last possible price-like part
+    cleaned = re.sub(r'[^\d\s€]', '', text)
+    matches = re.findall(r'\d{1,3}(?:\s*\d{3})*(?:\s*€)?', cleaned)
+    if not matches:
+        return None
+    # Take the last number sequence (usually the actual price)
+    last = matches[-1].replace(' ', '').replace('€', '')
+    try:
+        return int(last)
+    except ValueError:
+        return None
 
 
 def check_location(location, url, seen):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Linux; Android 10)",
-        "Accept-Language": "lv-LV,lv;q=0.9",
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36",
+        "Accept-Language": "lv-LV,lv;q=0.9,en;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
 
-    r = requests.get(url, headers=headers, timeout=20)
+    try:
+        r = requests.get(url, headers=headers, timeout=20)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"Failed to fetch {location} ({url}): {e}")
+        return
+
     soup = BeautifulSoup(r.text, "html.parser")
 
-    items = soup.select("div.list_item")
+    # Main listing rows on m.ss.lv — table rows with id="tr_*"
+    rows = soup.select('tr[id^="tr_"]')
 
-    for item in items:
-        a = item.find("a", href=True)
-        if not a or "/msg/" not in a["href"]:
-            continue
+    if not rows:
+        print(f"Warning: No listing rows found for {location}. Selector may need update. Found {len(soup.select('tr'))} <tr> tags total.")
+        # Optional fallback attempt
+        rows = soup.select("div.am") or soup.select("div.msg") or soup.find_all("tr")
 
-        link = "https://www.ss.lv" + a["href"]
-        if link in seen:
-            continue
+    new_items = 0
 
-        title = a.get_text(strip=True)
-
-        price_div = item.find("div", class_="price")
-        if not price_div:
-            continue
-
-        price = extract_price(price_div.get_text())
-        if not price or price > MAX_PRICE:
-            continue
-
-        message = (
-            f"🏠 {title}\n"
-            f"📍 {location}\n"
-            f"💰 {price} €\n"
-            f"🔗 {link}"
-        )
-
-        send_message(message)
-        seen.add(link)
-
-
-def main():
-    seen = load_seen()
-
-    for location, url in URLS.items():
-        check_location(location, url, seen)
-
-    save_seen(seen)
-
-
-if __name__ == "__main__":
-    main()
+    for row in rows:
+        # Skip header / separator rows
+        if 'msga_head' in row.get('class', []) or not row.get('id',
