@@ -121,9 +121,6 @@ def check_location(location: str, rss_url: str, seen: set[str]) -> None:
         send_message(message)
 
 
-send_message("✅ Bot is alive and monitoring")
-
-
 def main() -> None:
     seen = load_seen()
     for location, rss_url in URLS.items():
@@ -133,3 +130,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
