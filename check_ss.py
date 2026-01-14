@@ -34,50 +34,39 @@ def send_message(text):
 
 
 def parse_price(text):
-    try:
-        return int(text.replace("€", "").replace(" ", "").strip())
-    except:
+    text = text.replace("€", "").replace("EUR", "").replace(" ", "").strip()
+    if not text.isdigit():
         return None
+    return int(text)
 
 
 def check_location(location, url, seen):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-        "Accept-Language": "lv-LV,lv;q=0.9,en-US;q=0.8,en;q=0.7",
+        "User-Agent": "Mozilla/5.0",
+        "Accept-Language": "lv-LV,lv;q=0.9",
     }
 
     r = requests.get(url, headers=headers, timeout=20)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    rows = soup.find_all("tr")
-
-    for row in rows:
-        a = row.find("a", href=True)
-        if not a:
+    for row in soup.find_all("tr"):
+        cols = row.find_all("td")
+        if len(cols) < 5:
             continue
 
-        href = a["href"]
-        if "/msg/" not in href:
+        a = cols[1].find("a", href=True)
+        if not a or "/msg/" not in a["href"]:
             continue
 
-        tds = row.find_all("td")
-        if not tds:
+        price = parse_price(cols[-1].get_text())
+        if price is None or price > MAX_PRICE:
             continue
 
-        price = None
-        for td in tds:
-            if "€" in td.text:
-                price = parse_price(td.text)
-                break
-
-        if not price or price > MAX_PRICE:
-            continue
-
-        link = "https://www.ss.lv" + href
+        link = "https://www.ss.lv" + a["href"]
         if link in seen:
             continue
 
-        title = a.text.strip()
+        title = a.get_text(strip=True)
 
         message = (
             f"🏠 {title}\n"
@@ -101,6 +90,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
