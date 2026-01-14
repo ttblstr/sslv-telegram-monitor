@@ -5,6 +5,11 @@ on:
     - cron: "*/10 * * * *"
   workflow_dispatch:
 
+# Prevent overlapping runs from fighting over seen.json
+concurrency:
+  group: sslv-monitor
+  cancel-in-progress: true
+
 jobs:
   run-check:
     runs-on: ubuntu-latest
@@ -14,6 +19,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # needed for pull --rebase to work reliably
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -33,6 +40,13 @@ jobs:
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
+
+          # Only commit if seen.json exists/changed
           git add seen.json || true
-          git commit -m "Update seen listings" || true
+          git diff --staged --quiet && echo "No state changes" && exit 0
+
+          git commit -m "Update seen listings"
+
+          # Rebase in case another run pushed recently (belt + suspenders)
+          git pull --rebase origin main || true
           git push
