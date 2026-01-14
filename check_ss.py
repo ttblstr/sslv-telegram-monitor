@@ -10,7 +10,6 @@ CHAT_ID = os.environ["CHAT_ID"]
 MAX_PRICE = 300000
 STATE_FILE = "seen.json"
 
-# Your 3 monitored SS.lv RSS feeds (confirmed working: HTTP 200, items > 0)
 URLS = {
     "Mārupes pag.": "https://www.ss.lv/lv/real-estate/homes-summer-residences/riga-region/marupes-pag/sell/rss/",
     "Āgenskalns": "https://www.ss.lv/lv/real-estate/homes-summer-residences/riga/agenskalns/sell/rss/",
@@ -19,7 +18,7 @@ URLS = {
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
-    "Accept-Language": "lv-LV,lv;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Language": "lv-LV,lv;q=0.9",
 }
 
 
@@ -37,44 +36,32 @@ def save_seen(seen: set[str]) -> None:
 
 def send_message(text: str) -> None:
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": CHAT_ID, "text": text}, timeout=20).raise_for_status()
+    requests.post(
+        url,
+        json={"chat_id": CHAT_ID, "text": text},
+        timeout=20,
+    ).raise_for_status()
 
 
-def extract_price_any(text: str) -> int | None:
-    """
-    Extract a plausible EUR price from text.
-
-    Handles:
-      - "250 000 €", "250000 €", "250 000 EUR"
-      - Fallback to a large number if currency is omitted in RSS
-    Ignores:
-      - "cena pēc vienošanās" / negotiable text
-    """
+def extract_price(text: str) -> int | None:
     if not text:
         return None
 
     t = text.lower()
-    if "vienošan" in t or "dogovor" in t or "договор" in t:
+    if "vienošan" in t:
         return None
 
-    # Prefer explicit currency patterns
-    m = re.search(r"(\d[\d\s]{2,})\s*(€|eur)\b", text, flags=re.IGNORECASE)
+    m = re.search(r"(\d[\d\s]{2,})\s*(€|eur)", text, re.IGNORECASE)
     if m:
-        digits = re.sub(r"\s+", "", m.group(1))
-        if digits.isdigit():
-            return int(digits)
+        return int(re.sub(r"\s+", "", m.group(1)))
 
-    # Fallback: any "big-looking" number (>= 10k) to avoid matching room counts etc.
-    candidates = re.findall(r"\d[\d\s]{3,}", text)
-    best = None
-    for c in candidates:
-        digits = re.sub(r"\s+", "", c)
-        if digits.isdigit():
-            val = int(digits)
-            if val >= 10000:
-                best = val if best is None else max(best, val)
+    nums = re.findall(r"\d[\d\s]{4,}", text)
+    for n in nums:
+        val = int(re.sub(r"\s+", "", n))
+        if val >= 10000:
+            return val
 
-    return best
+    return None
 
 
 def fetch_rss(url: str) -> str:
@@ -83,65 +70,66 @@ def fetch_rss(url: str) -> str:
     return r.text
 
 
-def parse_rss_items(xml_text: str) -> list[dict]:
-    """
-    Parse RSS (RSS 2.0-ish).
-    Returns list of dicts: {title, link, desc, key}
-    """
+def parse_rss(xml_text: str) -> list[dict]:
     root = ET.fromstring(xml_text)
-
-    # Typical RSS: <rss><channel><item>...</item></channel></rss>
     channel = root.find("channel") or root.find(".//channel")
-    item_nodes = channel.findall("item") if channel is not None else root.findall(".//item")
+    items = []
 
-    items: list[dict] = []
-    for item in item_nodes:
+    for item in channel.findall("item"):
         title = (item.findtext("title") or "").strip()
         link = (item.findtext("link") or "").strip()
         desc = (item.findtext("description") or "").strip()
         guid = (item.findtext("guid") or "").strip()
 
-        # Stable key so we don't reprocess the same listing
-        key = link or guid or title
+        key = link or guid
         if not key:
             continue
 
-        items.append({"title": title, "link": link, "desc": desc, "key": key})
+        items.append(
+            {
+                "title": title,
+                "link": link,
+                "desc": desc,
+                "key": key,
+            }
+        )
     return items
 
 
 def check_location(location: str, rss_url: str, seen: set[str]) -> None:
-    xml_text = fetch_rss(rss_url)
-    items = parse_rss_items(xml_text)
+    xml = fetch_rss(rss_url)
+    items = parse_rss(xml)
 
     for it in items:
         key = it["key"]
-        link = it["link"] or it["key"]
-
         if key in seen:
             continue
 
-        # Mark as seen immediately to avoid repeated processing even if filtered out
         seen.add(key)
 
-        # Price filter (<= 300k)
-        price = extract_price_any(f"{it['title']} {it['desc']}")
+        price = extract_price(f"{it['title']} {it['desc']}")
         if price is None or price > MAX_PRICE:
             continue
 
-        msg = (
+        message = (
             f"🏠 {it['title']}\n"
             f"📍 {location}\n"
             f"💰 {price} €\n"
-            f"🔗 {link}"
+            f"🔗 {it['link']}"
         )
-        send_message(msg)
+
+        send_message(message)
+
+
+send_message("✅ Bot is alive and monitoring")
 
 
 def main() -> None:
-    send_message("✅ Telegram test message from GitHub Actions")
+    seen = load_seen()
+    for location, rss_url in URLS.items():
+        check_location(location, rss_url, seen)
+    save_seen(seen)
 
 
 if __name__ == "__main__":
     main()
-
