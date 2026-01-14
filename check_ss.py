@@ -139,13 +139,9 @@ def check_location(location: str, rss_url: str, seen: set[str]) -> None:
 
 
 def main() -> None:
-    seen = load_seen()
-
-    for location, rss_url in URLS.items():
-        check_location(location, rss_url, seen)
-
-    save_seen(seen)
+    send_message("✅ Telegram test message from GitHub Actions")
 
 
 if __name__ == "__main__":
     main()
+
