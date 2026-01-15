@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import html
 import requests
 import xml.etree.ElementTree as ET
 
@@ -43,25 +44,36 @@ def send_message(text: str) -> None:
     ).raise_for_status()
 
 
+def clean_text(text: str) -> str:
+    """Remove HTML and normalize whitespace."""
+    if not text:
+        return ""
+    text = html.unescape(text)
+    text = re.sub(r"<[^>]+>", " ", text)  # strip HTML tags
+    text = text.replace("\xa0", " ")
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def extract_price(text: str) -> int | None:
+    """
+    Extracts EUR price from text.
+    Accepts: '295 000 €', '295000 EUR'
+    Rejects: missing price, negotiable, garbage.
+    """
     if not text:
         return None
 
     t = text.lower()
-    if "vienošan" in t:
+    if "vienošan" in t or "pēc vienošanās" in t:
         return None
 
-    m = re.search(r"(\d[\d\s]{2,})\s*(€|eur)", text, re.IGNORECASE)
-    if m:
-        return int(re.sub(r"\s+", "", m.group(1)))
+    # Strict EUR match only
+    m = re.search(r"(\d{2,3}(?:\s?\d{3})?)\s*(€|eur)", text, re.IGNORECASE)
+    if not m:
+        return None
 
-    nums = re.findall(r"\d[\d\s]{4,}", text)
-    for n in nums:
-        val = int(re.sub(r"\s+", "", n))
-        if val >= 10000:
-            return val
-
-    return None
+    price = int(m.group(1).replace(" ", ""))
+    return price if price > 0 else None
 
 
 def fetch_rss(url: str) -> str:
@@ -73,12 +85,12 @@ def fetch_rss(url: str) -> str:
 def parse_rss(xml_text: str) -> list[dict]:
     root = ET.fromstring(xml_text)
     channel = root.find("channel") or root.find(".//channel")
-    items = []
 
+    items = []
     for item in channel.findall("item"):
-        title = (item.findtext("title") or "").strip()
+        title = clean_text(item.findtext("title") or "")
         link = (item.findtext("link") or "").strip()
-        desc = (item.findtext("description") or "").strip()
+        desc = clean_text(item.findtext("description") or "")
         guid = (item.findtext("guid") or "").strip()
 
         key = link or guid
@@ -130,4 +142,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
