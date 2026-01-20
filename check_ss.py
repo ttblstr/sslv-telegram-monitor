@@ -1,144 +1,135 @@
+import requests
 import os
 import json
 import re
-import html
-import requests
-import xml.etree.ElementTree as ET
+from bs4 import BeautifulSoup
 
-BOT_TOKEN = os.environ["BOT_TOKEN"]
-CHAT_ID = os.environ["CHAT_ID"]
+# ================= CONFIG =================
+
+BOT_TOKEN = os.environ["BOT_TOKEN"].strip()
+CHAT_ID = os.environ["CHAT_ID"].strip()
 
 MAX_PRICE = 300000
 STATE_FILE = "seen.json"
 
 URLS = {
-    "Mārupes pag.": "https://www.ss.lv/lv/real-estate/homes-summer-residences/riga-region/marupes-pag/sell/rss/",
-    "Āgenskalns": "https://www.ss.lv/lv/real-estate/homes-summer-residences/riga/agenskalns/sell/rss/",
-    "Bieriņi": "https://www.ss.lv/lv/real-estate/homes-summer-residences/riga/bierini/sell/rss/",
+    "Mārupes pag.": "https://www.ss.lv/lv/real-estate/homes-summer-residences/riga-region/marupes-pag/sell/",
+    "Āgenskalns": "https://www.ss.lv/lv/real-estate/homes-summer-residences/riga/agenskalns/sell/",
+    "Bieriņi": "https://www.ss.lv/lv/real-estate/homes-summer-residences/riga/bierini/sell/",
 }
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0",
-    "Accept-Language": "lv-LV,lv;q=0.9",
+    "Accept-Language": "lv-LV,lv;q=0.9,en;q=0.8",
 }
 
+# ================= HELPERS =================
 
-def load_seen() -> set[str]:
+def log(msg):
+    print(msg, flush=True)
+
+def load_seen():
     if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
+        with open(STATE_FILE, "r") as f:
             return set(json.load(f))
     return set()
 
+def save_seen(seen):
+    with open(STATE_FILE, "w") as f:
+        json.dump(sorted(seen), f)
 
-def save_seen(seen: set[str]) -> None:
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(sorted(seen), f, ensure_ascii=False, indent=2)
-
-
-def send_message(text: str) -> None:
+def send_message(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    requests.post(
+    r = requests.post(
         url,
-        json={"chat_id": CHAT_ID, "text": text},
-        timeout=20,
-    ).raise_for_status()
+        json={"chat_id": CHAT_ID, "text": text, "disable_web_page_preview": True},
+        timeout=15,
+    )
+    r.raise_for_status()
 
-
-def clean_text(text: str) -> str:
-    """Remove HTML and normalize whitespace."""
-    if not text:
-        return ""
-    text = html.unescape(text)
-    text = re.sub(r"<[^>]+>", " ", text)  # strip HTML tags
-    text = text.replace("\xa0", " ")
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def extract_price(text: str) -> int | None:
+def extract_price(text):
     """
-    Extracts EUR price from text.
-    Accepts: '295 000 €', '295000 EUR'
-    Rejects: missing price, negotiable, garbage.
+    Extract integer price from text like:
+    '295 000 €', '300000 EUR', etc.
     """
     if not text:
         return None
-
-    t = text.lower()
-    if "vienošan" in t or "pēc vienošanās" in t:
-        return None
-
-    # Strict EUR match only
-    m = re.search(r"(\d{2,3}(?:\s?\d{3})?)\s*(€|eur)", text, re.IGNORECASE)
+    m = re.search(r"(\d[\d\s]{3,})", text)
     if not m:
         return None
+    return int(m.group(1).replace(" ", ""))
 
-    price = int(m.group(1).replace(" ", ""))
-    return price if price > 0 else None
+# ================= CORE =================
 
-
-def fetch_rss(url: str) -> str:
-    r = requests.get(url, headers=HEADERS, timeout=30)
+def check_location(location, url, seen):
+    log(f"\n--- Checking {location} ---")
+    r = requests.get(url, headers=HEADERS, timeout=20)
     r.raise_for_status()
-    return r.text
 
+    soup = BeautifulSoup(r.text, "html.parser")
+    rows = soup.find_all("tr")
 
-def parse_rss(xml_text: str) -> list[dict]:
-    root = ET.fromstring(xml_text)
-    channel = root.find("channel") or root.find(".//channel")
+    log(f"Rows found: {len(rows)}")
 
-    items = []
-    for item in channel.findall("item"):
-        title = clean_text(item.findtext("title") or "")
-        link = (item.findtext("link") or "").strip()
-        desc = clean_text(item.findtext("description") or "")
-        guid = (item.findtext("guid") or "").strip()
+    found_any = False
 
-        key = link or guid
-        if not key:
+    for row in rows:
+        link_tag = row.find("a", href=True)
+        if not link_tag:
             continue
 
-        items.append(
-            {
-                "title": title,
-                "link": link,
-                "desc": desc,
-                "key": key,
-            }
-        )
-    return items
-
-
-def check_location(location: str, rss_url: str, seen: set[str]) -> None:
-    xml = fetch_rss(rss_url)
-    items = parse_rss(xml)
-
-    for it in items:
-        key = it["key"]
-        if key in seen:
+        href = link_tag["href"]
+        if not href.startswith("/msg/"):
             continue
 
-        seen.add(key)
-
-        price = extract_price(f"{it['title']} {it['desc']}")
-        if price is None or price > MAX_PRICE:
+        full_link = "https://www.ss.lv" + href
+        if full_link in seen:
             continue
+
+        cols = row.find_all("td")
+        price = None
+
+        for col in cols:
+            p = extract_price(col.get_text(strip=True))
+            if p:
+                price = p
+                break
+
+        if price is None:
+            continue
+
+        if price > MAX_PRICE:
+            continue
+
+        title = link_tag.get_text(strip=True)
 
         message = (
-            f"🏠 {it['title']}\n"
+            f"🏠 {title}\n"
             f"📍 {location}\n"
             f"💰 {price} €\n"
-            f"🔗 {it['link']}"
+            f"🔗 {full_link}"
         )
 
+        log(f"SENDING: {title} | {price}")
         send_message(message)
 
+        seen.add(full_link)
+        found_any = True
 
-def main() -> None:
+    if not found_any:
+        log("No new matching listings.")
+
+# ================= ENTRY =================
+
+def main():
+    log("=== SS.LV MONITOR START ===")
     seen = load_seen()
-    for location, rss_url in URLS.items():
-        check_location(location, rss_url, seen)
-    save_seen(seen)
 
+    for location, url in URLS.items():
+        check_location(location, url, seen)
+
+    save_seen(seen)
+    log("=== DONE ===")
 
 if __name__ == "__main__":
     main()
